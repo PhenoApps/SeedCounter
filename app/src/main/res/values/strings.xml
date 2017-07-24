@@ -1,0 +1,15 @@
+<resources>
+    <string name="app_name">SeedCounter</string>
+    <string name="title_activity_main">Seed Counter</string>
+    <string name="drawer_open">Open</string>
+    <string name="drawer_close">Close</string>
+
+    <!-- Intro Strings -->
+    <string name="intro_title_1">Welcome to Seed Counter!</string>
+    <string name="intro_title_2"></string>
+    <string name="intro_title_3"></string>
+    <string name="intro_body_1"></string>
+    <string name="intro_body_2"></string>
+    <string name="intro_body_3"></string>
+
+</resources>
