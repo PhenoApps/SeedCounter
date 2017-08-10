@@ -4,6 +4,7 @@ import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewFrame;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
+import org.opencv.android.Utils;
 import org.opencv.core.Core;
 import org.opencv.core.CvType;
 import org.opencv.core.Mat;
@@ -15,16 +16,29 @@ import org.opencv.core.Scalar;
 import org.opencv.core.Size;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.imgproc.Moments;
+import org.opencv.videoio.VideoCapture;
 
 import android.app.Activity;
+import android.content.ContentUris;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
+import android.net.Uri;
 import android.os.AsyncTask;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.Debug;
+import android.os.Environment;
 import android.preference.PreferenceManager;
+import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 import android.support.annotation.NonNull;
 import android.support.design.widget.NavigationView;
+import android.support.v4.app.ActivityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
 import android.support.v7.app.AppCompatActivity;
@@ -36,20 +50,42 @@ import android.view.SurfaceView;
 import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
+import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
+import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler;
+import com.github.hiteshsondhi88.libffmpeg.FFmpeg;
+import com.github.hiteshsondhi88.libffmpeg.LoadBinaryResponseHandler;
+import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegCommandAlreadyRunningException;
+import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegNotSupportedException;
+
+import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.IOException;
+import java.lang.reflect.Array;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Timer;
+import java.util.TimerTask;
 
 public class MainActivity extends AppCompatActivity implements CvCameraViewListener2 {
     private static final String TAG = "OCVSample::Activity";
 
+    static {System.loadLibrary("opencv_java3");}
+
     private Mat firstFrame;
+    private Bitmap mBitmap;
 
     Mat mCrossPattern;
 
     final Scalar mCircleColor = new Scalar(100,0,100);
     final Scalar mContourColor = new Scalar(255, 0, 0);
     final Scalar mContourMomentsColor = new Scalar(0, 0, 0);
+
+    private int nextFrame;
+    private int predictedFrames;
 
     private int numSeeds = 0;
     private int areaL = 808;
@@ -65,6 +101,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
     ArrayList<Seed> mSeeds;
 
+    private TextView mProgressText;
+    private ImageView mSurfaceView;
     private CameraBridgeViewBase mOpenCvCameraView;
     private boolean mIsJavaCamera = true;
     private MenuItem mItemSwitchCamera = null;
@@ -79,7 +117,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
             switch (status) {
                 case LoaderCallbackInterface.SUCCESS: {
                     Log.i(TAG, "OpenCV loaded successfully");
-                    mOpenCvCameraView.enableView();
                     mCrossPattern = Imgproc.getStructuringElement(Imgproc.MORPH_CROSS, new Size(5, 5));
                 }
                 break;
@@ -125,15 +162,263 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         if (tutorialMode)
             launchIntro();
 
+        ActivityCompat.requestPermissions(this, SeedCounterConstants.permissions, SeedCounterConstants.PERM_REQUEST);
+
         firstFrame = null;
         mSeeds = new ArrayList<>();
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        mOpenCvCameraView = (CameraBridgeViewBase) findViewById(R.id.surfaceView);
-        mOpenCvCameraView.setMaxFrameSize(320, 440);
-        mOpenCvCameraView.setVisibility(SurfaceView.VISIBLE);
-        mOpenCvCameraView.setCvCameraViewListener(this);
+        mSurfaceView = (ImageView) findViewById(R.id.surfaceView);
+        mSurfaceView.setEnabled(true);
+        mSurfaceView.setVisibility(ImageView.VISIBLE);
+
+        mProgressText = (TextView) findViewById(R.id.progressText);
+
+        final Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+        i.setType("*/*");
+        startActivityForResult(Intent.createChooser(i, "Choose file to import."), SeedCounterConstants.LOAD_REQUEST);
+
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
+        super.onActivityResult(requestCode, resultCode, intent);
+
+        if (requestCode == SeedCounterConstants.LOAD_REQUEST) {
+            if (resultCode == RESULT_OK) {
+
+                String path = getPath(intent.getData());
+
+                sliceVideo(path);
+
+            }
+        }
+    }
+
+    private void sliceVideo(final String path) {
+
+        final FFmpeg ffmpeg = FFmpeg.getInstance(this);
+        try {
+            ffmpeg.execute(new String[] {"-i", path}, new ExecuteBinaryResponseHandler() {
+                @Override
+                public void onProgress(String msg) {
+                    if (msg.contains("Duration")) {
+                        startVideoSlice(msg, path);
+                        ffmpeg.killRunningProcesses();
+                    }
+                }
+            });
+        } catch (FFmpegCommandAlreadyRunningException e) {
+            Toast.makeText(this, "Load duration failed.", Toast.LENGTH_LONG).show();
+            finish();
+        }
+    }
+
+    private void startVideoSlice(String duration, String path) {
+
+        final String[] split = duration.split(",");
+        final String durationString = split[0].trim().split(" ")[1];
+        final String[] timeSplit = durationString.split(":");
+        final int hours = Integer.parseInt(timeSplit[0]);
+        final int minutes = Integer.parseInt(timeSplit[1]);
+        final double seconds = Double.parseDouble(timeSplit[2]);
+        final double secondsInVideo = Math.ceil(hours * 360 + minutes * 60 + seconds);
+
+        predictedFrames = (int) secondsInVideo * 30;
+        nextFrame = 0;
+        mProgressText.setText(nextFrame + "/" + predictedFrames);
+        scheduleFFmpeg(0.0, secondsInVideo, path);
+    }
+
+    private void scheduleFFmpeg(final double s, final double end, final String path) {
+
+        if (s < end) {
+            final FFmpeg ffmpeg = FFmpeg.getInstance(this);
+
+            if (isExternalStorageWritable()) {
+
+                final File seedCounterDir = new File(Environment.getExternalStorageDirectory(), "SeedCounter");
+
+                final File[] children = seedCounterDir.listFiles();
+                for (File f : children) f.delete();
+
+                if (seedCounterDir.exists()) {
+                    final String nextFramePath = seedCounterDir.getPath() + "/temp" + nextFrame + ".bmp";
+                    final ArrayList<String> cmd = new ArrayList<>();
+                    cmd.add(cmd.size(), "-i");
+                    cmd.add(cmd.size(), path);
+                    cmd.add(cmd.size(), "-s");
+                    cmd.add(cmd.size(), "320x240");
+                    cmd.add(cmd.size(), "-r");
+                    cmd.add(cmd.size(), "30");
+                    cmd.add(cmd.size(), "-updatefirst");
+                    cmd.add(cmd.size(), "1");
+                    cmd.add(cmd.size(), nextFramePath);
+                    final String[] arrayCommands = cmd.toArray(new String[] {});
+                    try {
+                        ffmpeg.execute(
+                                arrayCommands,
+                                new ExecuteBinaryResponseHandler() {
+                                    @Override
+                                    public void onSuccess(String msg) {
+                                        Log.d("DEBUG", msg);
+                                    }
+
+                                    @Override
+                                    public void onFailure(String msg) {
+                                        Log.d("DEBUG", msg);
+                                    }
+
+                                    @Override
+                                    public void onProgress(String msg) {
+                                        Log.d("DEBUG", msg);
+                                    }
+                                });
+                    } catch (FFmpegCommandAlreadyRunningException e) {
+                        Log.d("DEBUG", "command already running");
+                    }
+                    final Timer updateView = new Timer("update view");
+                    updateView.schedule(new TimerTask() {
+                        @Override
+                        public void run() {
+                            final File f = new File(nextFramePath);
+                            //Log.d("FLENGTH", String.valueOf(f.getFreeSpace()) + ":" + String.valueOf(f.getTotalSpace()) + ":" + String.valueOf(f.getUsableSpace()) + ":" + String.valueOf(f.length()));
+                            if (f.exists() && f.canWrite()) {
+                                mBitmap = BitmapFactory.decodeFile(f.getPath());
+
+                                if (mBitmap != null) {
+                                    int size = mBitmap.getRowBytes() * mBitmap.getHeight();
+                                    final ByteBuffer byteBuffer = ByteBuffer.allocate(size);
+                                    mBitmap.copyPixelsToBuffer(byteBuffer);
+                                    byte[] array = byteBuffer.array();
+
+                                    int total = 0;
+                                    for (int i = 0; i < 128; i = i + 1) {
+                                        total += array[i];
+                                    }
+                                    if (total < -32 || total > 32)
+                                        updateBitmap();
+                                }
+                            }
+
+                        }
+                    }, 0, 50);
+                } else if(!seedCounterDir.mkdirs()) {
+                    Log.d("DEBUG", "failed to create Seedcounter directory");
+                } else scheduleFFmpeg(0.0, end, path);
+            } else Toast.makeText(this, "Default storage not writable.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void updateBitmap() {
+
+        if (mBitmap != null) {
+            runOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    mSurfaceView.setImageBitmap(mBitmap);
+                    mSurfaceView.invalidate();
+                }
+            });
+        }
+    }
+
+    public boolean isExternalStorageWritable() {
+
+        String state = Environment.getExternalStorageState();
+        if (Environment.MEDIA_MOUNTED.equals(state)) {
+            return true;
+        }
+        return false;
+    }
+
+    //based on https://github.com/iPaulPro/aFileChooser/blob/master/aFileChooser/src/com/ipaulpro/afilechooser/utils/FileUtils.java
+    public String getPath(Uri uri) {
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+
+            // DocumentProvider
+            if (DocumentsContract.isDocumentUri(this, uri)) {
+                // LocalStorageProvider
+                if ("com.android.externalstorage.documents".equals(uri.getAuthority())) {
+                    final String docId = DocumentsContract.getDocumentId(uri);
+                    final String[] split = docId.split(":");
+                    final String type = split[0];
+
+                    if ("primary".equalsIgnoreCase(type)) {
+                        return Environment.getExternalStorageDirectory() + "/" + split[1];
+                    }
+
+                    // TODO handle non-primary volumes
+                }
+                // DownloadsProvider
+                else if ("com.android.providers.downloads.documents".equals(uri.getAuthority())) {
+
+                    final String id = DocumentsContract.getDocumentId(uri);
+                    final Uri contentUri = ContentUris.withAppendedId(
+                            Uri.parse("content://downloads/public_downloads"), Long.valueOf(id));
+
+                    return getDataColumn(this, contentUri, null, null);
+                }
+                // MediaProvider
+                else if ("com.android.providers.media.documents".equals(uri.getAuthority())) {
+                    final String docId = DocumentsContract.getDocumentId(uri);
+                    final String[] split = docId.split(":");
+                    final String type = split[0];
+
+                    Uri contentUri = null;
+                    if ("image".equals(type)) {
+                        contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                    } else if ("video".equals(type)) {
+                        contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                    } else if ("audio".equals(type)) {
+                        contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+                    }
+
+                    final String selection = "_id=?";
+                    final String[] selectionArgs = new String[] {
+                            split[1]
+                    };
+
+                    return getDataColumn(this, contentUri, selection, selectionArgs);
+                }
+            }
+            // MediaStore (and general)
+            else if ("content".equalsIgnoreCase(uri.getScheme())) {
+
+                // Return the remote address
+                if ("com.google.android.apps.photos.content".equals(uri.getAuthority()))
+                    return uri.getLastPathSegment();
+
+                return getDataColumn(this, uri, null, null);
+            }
+            // File
+            else if ("file".equalsIgnoreCase(uri.getScheme())) {
+                return uri.getPath();
+            } else if ("com.estrongs.files".equals(uri.getAuthority())) {
+                return uri.getPath();
+            }
+        }
+        return null;
+    }
+
+    public static String getDataColumn(Context context, Uri uri, String selection, String[] selectionArgs) {
+
+        Cursor cursor = null;
+        final String column = "_data";
+        final String[] projection = { column };
+        try {
+            cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                final int index = cursor.getColumnIndexOrThrow(column);
+                return cursor.getString(index);
+            }
+        } finally {
+            if (cursor != null)
+                cursor.close();
+        }
+        return null;
     }
 
     @Override
@@ -146,9 +431,19 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
     @Override
     public void onResume() {
         super.onResume();
+
+        FFmpeg ffmpeg = FFmpeg.getInstance(this);
+        try {
+            ffmpeg.loadBinary(new LoadBinaryResponseHandler() {
+
+            });
+        } catch (FFmpegNotSupportedException e) {
+            e.printStackTrace();
+        }
+
         if (!OpenCVLoader.initDebug()) {
             Log.d(TAG, "Internal OpenCV library not found. Using OpenCV Manager for initialization");
-            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_0_0, this, mLoaderCallback);
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_2_0, this, mLoaderCallback);
         } else {
             Log.d(TAG, "OpenCV library found inside package. Using it!");
             mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
