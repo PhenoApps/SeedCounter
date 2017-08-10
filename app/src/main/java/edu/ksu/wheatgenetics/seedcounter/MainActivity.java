@@ -27,6 +27,7 @@ import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Build;
@@ -101,7 +102,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
     ArrayList<Seed> mSeeds;
 
-    private TextView mProgressText;
     private ImageView mSurfaceView;
     private CameraBridgeViewBase mOpenCvCameraView;
     private boolean mIsJavaCamera = true;
@@ -159,8 +159,8 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         final SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
         final boolean tutorialMode = sharedPref.getBoolean(SettingsActivity.TUTORIAL_MODE, true);
 
-        if (tutorialMode)
-            launchIntro();
+       // if (tutorialMode)
+           // launchIntro();
 
         ActivityCompat.requestPermissions(this, SeedCounterConstants.permissions, SeedCounterConstants.PERM_REQUEST);
 
@@ -172,8 +172,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
         mSurfaceView = (ImageView) findViewById(R.id.surfaceView);
         mSurfaceView.setEnabled(true);
         mSurfaceView.setVisibility(ImageView.VISIBLE);
-
-        mProgressText = (TextView) findViewById(R.id.progressText);
 
         final Intent i = new Intent(Intent.ACTION_GET_CONTENT);
         i.setType("*/*");
@@ -227,7 +225,6 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
 
         predictedFrames = (int) secondsInVideo * 30;
         nextFrame = 0;
-        mProgressText.setText(nextFrame + "/" + predictedFrames);
         scheduleFFmpeg(0.0, secondsInVideo, path);
     }
 
@@ -284,26 +281,26 @@ public class MainActivity extends AppCompatActivity implements CvCameraViewListe
                         public void run() {
                             final File f = new File(nextFramePath);
                             //Log.d("FLENGTH", String.valueOf(f.getFreeSpace()) + ":" + String.valueOf(f.getTotalSpace()) + ":" + String.valueOf(f.getUsableSpace()) + ":" + String.valueOf(f.length()));
-                            if (f.exists() && f.canWrite()) {
+                            if (f.exists()) {
                                 mBitmap = BitmapFactory.decodeFile(f.getPath());
 
                                 if (mBitmap != null) {
-                                    int size = mBitmap.getRowBytes() * mBitmap.getHeight();
-                                    final ByteBuffer byteBuffer = ByteBuffer.allocate(size);
-                                    mBitmap.copyPixelsToBuffer(byteBuffer);
-                                    byte[] array = byteBuffer.array();
 
+                                    int[] isCorrupted = new int[16];
                                     int total = 0;
-                                    for (int i = 0; i < 128; i = i + 1) {
-                                        total += array[i];
+                                    for (int i = 0; i < 16; i = i + 1) {
+                                        if (mBitmap.getPixel(i, 0) == Color.BLACK)
+                                            isCorrupted[i] = 1;
                                     }
-                                    if (total < -32 || total > 32)
+                                    for (int i : isCorrupted)
+                                        total += i;
+                                    if (total < 8)
                                         updateBitmap();
                                 }
                             }
 
                         }
-                    }, 0, 50);
+                    }, 0, 25);
                 } else if(!seedCounterDir.mkdirs()) {
                     Log.d("DEBUG", "failed to create Seedcounter directory");
                 } else scheduleFFmpeg(0.0, end, path);
