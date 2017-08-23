@@ -6,9 +6,14 @@ import android.view.MenuItem;
 
 public class SettingsActivity extends AppCompatActivity {
 
-    public static String SCAN_MODE_LIST = "edu.ksu.wheatgenetics.verify.SCAN_MODE";
-    public static String AUDIO_ENABLED = "edu.ksu.wheatgenetics.verify.AUDIO_ENABLED";
-    public static String TUTORIAL_MODE = "edu.ksu.wheatgenetics.verify.TUTORIAL_MODE";
+    public static String TUTORIAL_MODE = "edu.ksu.wheatgenetics.seedcounter.TUTORIAL_MODE";
+    public static String PARAM_AREA_LOW = "edu.ksu.wheatgenetics.seedcounter.AREA_LOW";
+    public static String PARAM_AREA_HIGH = "edu.ksu.wheatgenetics.seedcounter.AREA_HIGH";
+    public static String PARAM_DEFAULT_RATE = "edu.ksu.wheatgenetics.seedcounter.DEFAULT_RATE";
+    public static String PARAM_SIZE_LOWER_BOUND_RATIO =
+            "edu.ksu.wheatgenetics.seedcounter.SIZE_LOWER_BOUND_RATIO";
+    public static String PARAM_NEW_SEED_DIST_RATIO =
+            "edu.ksu.wheatgenetics.seedcounter.NEW_SEED_DIST_RATIO";
 
     @Override
     public void onCreate(Bundle savedInstanceState) {

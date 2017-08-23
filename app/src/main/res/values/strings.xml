@@ -1,8 +1,33 @@
 <resources>
+
     <string name="app_name">SeedCounter</string>
     <string name="title_activity_main">Seed Counter</string>
     <string name="drawer_open">Open</string>
     <string name="drawer_close">Close</string>
+
+    <!-- tunable parameter keys -->
+    <string name="param_title_key">edu.ksu.wheatgenetics.seedcounter.PARAM_TITLE</string>
+    <string name="param_area_low_key">edu.ksu.wheatgenetics.seedcounter.AREA_LOW</string>
+    <string name="param_area_high_key">edu.ksu.wheatgenetics.seedcounter.AREA_HIGH</string>
+    <string name="param_default_rate_key">edu.ksu.wheatgenetics.seedcounter.DEFAULT_RATE</string>
+    <string name="param_size_lower_bound_key">edu.ksu.wheatgenetics.seedcounter.SIZE_LOWER_BOUND_RATIO</string>
+    <string name="param_new_seed_dst_ratio_key">edu.ksu.wheatgenetics.seedcounter.NEW_SEED_DIST_RATIO</string>
+
+    <!-- Parameter tuning -->
+    <string name="pref_param_tune_title">Parameters</string>
+    <string name="param_area_low">Area Lower Bound</string>
+    <string name="param_area_high">Area Upper Bound</string>
+    <string name="param_avg_flow_rate">Average Flow Rate</string>
+    <string name="param_default_rate">Default Flow Rate</string>
+    <string name="param_size_lower_bound_ratio">Lower Bound Size Ratio</string>
+    <string name="param_new_seed_distance_ratio">New Seed Distance Ratio</string>
+
+    <!-- Default Parameters -->
+    <string name="param_default_area_low">200</string>
+    <string name="param_default_area_high">160000</string>
+    <string name="param_default_default_rate">34</string>
+    <string name="param_default_size_lower_bound_ratio">0.25</string>
+    <string name="param_default_new_seed_dist_ratio">4.0</string>
 
     <!-- Intro Strings -->
     <string name="intro_title_1">Welcome to Seed Counter!</string>
@@ -11,5 +36,12 @@
     <string name="intro_body_1"></string>
     <string name="intro_body_2"></string>
     <string name="intro_body_3"></string>
+
+    <!-- View Text -->
+    <string name="seed_counter_welcome">Welcome to Seed Counter</string>
+    <string name="start_with_camera">Process With High Speed Video Capture</string>
+    <string name="start_with_file">Process With File</string>
+    <string name="button_stop">STOP</string>
+    <string name="button_start">START</string>
 
 </resources>

@@ -1,4 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
-
+    <PreferenceCategory
+        android:title="@string/pref_param_tune_title"
+        android:key="@string/param_title_key">
+        <EditTextPreference
+            android:title="@string/param_area_low"
+            android:key="@string/param_area_low_key"
+            android:defaultValue="@string/param_default_area_low">
+        </EditTextPreference>
+        <EditTextPreference
+            android:title="@string/param_area_high"
+            android:key="@string/param_area_high_key"
+            android:defaultValue="@string/param_default_area_high">
+        </EditTextPreference>
+        <EditTextPreference
+            android:title="@string/param_default_rate"
+            android:key="@string/param_default_rate_key"
+            android:defaultValue="@string/param_default_default_rate">
+        </EditTextPreference>
+        <EditTextPreference
+            android:title="@string/param_size_lower_bound_ratio"
+            android:key="@string/param_size_lower_bound_key"
+            android:defaultValue="@string/param_size_lower_bound_ratio">
+        </EditTextPreference>
+        <EditTextPreference
+            android:title="@string/param_new_seed_distance_ratio"
+            android:key="@string/param_new_seed_dst_ratio_key"
+            android:defaultValue="@string/param_default_new_seed_dist_ratio">
+        </EditTextPreference>
+    </PreferenceCategory>
 </PreferenceScreen>

@@ -3,6 +3,7 @@
     package="edu.ksu.wheatgenetics.seedcounter">
 
     <uses-permission android:name="android.permission.CAMERA"/>
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_INTERNAL_STORAGE"/>
@@ -28,7 +29,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <activity android:name=".IntroActivity"></activity>
-        <activity android:name=".SettingsActivity"></activity>
+        <activity android:name=".SettingsActivity"
+            android:label="Settings"
+            android:theme="@style/AppTheme.NoActionBar">
+        </activity>
+        <activity android:name=".CameraSessionActivity"></activity>
+        <activity android:name=".FileVideoCaptureActivity"></activity>
     </application>
 </manifest>
