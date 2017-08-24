@@ -359,7 +359,6 @@ public class CameraSessionActivity extends AppCompatActivity {
 
     void initMediaRecorder() throws IOException {
 
-        mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
         mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
         mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.WEBM);
 
@@ -372,7 +371,6 @@ public class CameraSessionActivity extends AppCompatActivity {
         mMediaRecorder.setVideoFrameRate(120);
         mMediaRecorder.setVideoSize(1280, 720);
         mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.VP8);
-        mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
         int rotation = getWindowManager().getDefaultDisplay().getRotation();
         int orientation = ORIENTATIONS.get(rotation);
         mMediaRecorder.setOrientationHint(orientation);

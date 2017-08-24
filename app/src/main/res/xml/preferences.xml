@@ -21,7 +21,7 @@
         <EditTextPreference
             android:title="@string/param_size_lower_bound_ratio"
             android:key="@string/param_size_lower_bound_key"
-            android:defaultValue="@string/param_size_lower_bound_ratio">
+            android:defaultValue="@string/param_default_size_lower_bound_ratio">
         </EditTextPreference>
         <EditTextPreference
             android:title="@string/param_new_seed_distance_ratio"

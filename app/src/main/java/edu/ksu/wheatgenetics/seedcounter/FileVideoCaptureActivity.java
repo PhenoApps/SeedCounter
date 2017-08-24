@@ -131,14 +131,15 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
         final SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
         final boolean tutorialMode = sharedPref.getBoolean(SettingsActivity.TUTORIAL_MODE, true);
 
+        final boolean debugMode = sharedPref.getBoolean(SettingsActivity.DEBUG_MODE, false);
        // if (tutorialMode)
            // launchIntro();
 
         final int areaLow = Integer.valueOf(sharedPref.getString(SettingsActivity.PARAM_AREA_LOW, "200"));
         final int areaHigh = Integer.valueOf(sharedPref.getString(SettingsActivity.PARAM_AREA_HIGH, "160000"));
         final int defaultRate = Integer.valueOf(sharedPref.getString(SettingsActivity.PARAM_DEFAULT_RATE, "34"));
-        final float sizeLowerBoundRatio = Float.valueOf(sharedPref.getString(SettingsActivity.PARAM_SIZE_LOWER_BOUND_RATIO, "0.25"));
-        final float newSeedDistRatio = Float.valueOf(sharedPref.getString(SettingsActivity.PARAM_NEW_SEED_DIST_RATIO, "4.0"));
+        final double sizeLowerBoundRatio = Double.valueOf(sharedPref.getString(SettingsActivity.PARAM_SIZE_LOWER_BOUND_RATIO, "0.25"));
+        final double newSeedDistRatio = Double.valueOf(sharedPref.getString(SettingsActivity.PARAM_NEW_SEED_DIST_RATIO, "4.0"));
 
         final SeedCounter.SeedCounterParams params = new SeedCounter.SeedCounterParams(areaLow, areaHigh, defaultRate, sizeLowerBoundRatio, newSeedDistRatio);
         mSeedCounter = new SeedCounter(params);

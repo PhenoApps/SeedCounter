@@ -48,7 +48,7 @@ public class SeedCounter {
         private double sizeLowerBoundRatio, newSeedDistRatio;
 
         SeedCounterParams(int areaLow, int areaHigh, int defaultRate,
-                                 float sizeLowerBoundRatio, float newSeedDistRatio) {
+                                 double sizeLowerBoundRatio, double newSeedDistRatio) {
             this.areaLow = areaLow;
             this.areaHigh = areaHigh;
             this.defaultRate = defaultRate;

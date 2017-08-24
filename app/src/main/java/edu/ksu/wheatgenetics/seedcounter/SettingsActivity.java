@@ -6,6 +6,7 @@ import android.view.MenuItem;
 
 public class SettingsActivity extends AppCompatActivity {
 
+    public static String DEBUG_MODE = "edu.ksu.wheatgenetics.seedcounter.DEBUG_MODE";
     public static String TUTORIAL_MODE = "edu.ksu.wheatgenetics.seedcounter.TUTORIAL_MODE";
     public static String PARAM_AREA_LOW = "edu.ksu.wheatgenetics.seedcounter.AREA_LOW";
     public static String PARAM_AREA_HIGH = "edu.ksu.wheatgenetics.seedcounter.AREA_HIGH";
