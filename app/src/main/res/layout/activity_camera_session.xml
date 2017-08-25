@@ -6,7 +6,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <TextureView
+    <edu.ksu.wheatgenetics.seedcounter.AutoFitTextureView
         android:id="@+id/textureView"
         android:layout_width="640dp"
         android:layout_height="360dp"

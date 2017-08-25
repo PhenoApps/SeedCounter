@@ -138,7 +138,8 @@ public class MainActivity extends AppCompatActivity {
             mStartVideoCapture.setOnClickListener(new View.OnClickListener() {
                 @Override
                 public void onClick(View v) {
-                    startActivity(new Intent(MainActivity.this, CameraSessionActivity.class));
+                   // startActivity(new Intent(MainActivity.this, CameraSessionActivity.class));
+                    startActivity(new Intent(MainActivity.this, CameraActivity.class));
                 }
             });
         }

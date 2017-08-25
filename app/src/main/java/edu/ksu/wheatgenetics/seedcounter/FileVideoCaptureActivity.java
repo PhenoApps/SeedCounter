@@ -305,12 +305,12 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
         final Bitmap retBitmap;
 
         if (fromCall) {
-            Matrix matrix = new Matrix();
-            matrix.postRotate(-90);
+            //Matrix matrix = new Matrix();
+           // matrix.postRotate(-90);
 
             retBitmap = mSeedCounter.process(
                     Bitmap.createBitmap(inputFrame, 0, 0,
-                            inputFrame.getWidth(), inputFrame.getHeight(), matrix, true));
+                            inputFrame.getWidth(), inputFrame.getHeight(), null, true));
 
         } else retBitmap = mSeedCounter.process(inputFrame);
 
