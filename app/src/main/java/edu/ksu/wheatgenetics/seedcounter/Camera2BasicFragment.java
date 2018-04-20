@@ -54,6 +54,7 @@ import android.widget.Toast;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.lang.reflect.Array;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -139,10 +140,8 @@ public class Camera2BasicFragment extends Fragment
      */
     private String mCameraId;
 
-    /**
-     * An {@link AutoFitTextureView} for camera preview.
-     */
-    private AutoFitTextureView mTextureView;
+
+    private TextureView mTextureView;
 
     /**
      * A {@link CameraCaptureSession } for camera preview.
@@ -259,13 +258,16 @@ public class Camera2BasicFragment extends Fragment
     }
 
     private Size chooseHighSpeedVideoSize(Size[] choices) {
-        for (Size s: choices) {
-            if (s.getWidth() == MAX_PREVIEW_WIDTH
-                    && s.getHeight() <= MAX_PREVIEW_HEIGHT) {
-                return s;
+
+        Arrays.sort(choices, new Comparator<Size>() {
+            public int compare(Size a, Size b) {
+                return Integer.compare(a.getWidth() + a.getHeight(),
+                        b.getWidth() + b.getHeight());
             }
-        }
+        });
         return choices[choices.length - 1];
+
+
     }
 
     /**
@@ -277,43 +279,29 @@ public class Camera2BasicFragment extends Fragment
      *
      * @param choices           The list of sizes that the camera supports for the intended output
      *                          class
-     * @param textureViewWidth  The width of the texture view relative to sensor coordinate
-     * @param textureViewHeight The height of the texture view relative to sensor coordinate
-     * @param maxWidth          The maximum width that can be chosen
-     * @param maxHeight         The maximum height that can be chosen
      * @param aspectRatio       The aspect ratio
      * @return The optimal {@code Size}, or an arbitrary one if none were big enough
      */
-    private static Size chooseOptimalSize(Size[] choices, int textureViewWidth,
-                                          int textureViewHeight, int maxWidth, int maxHeight, Size aspectRatio) {
+    private static Size chooseOptimalSize(Size[] choices, Size[] highSpeedSizes, Size aspectRatio) {
 
         // Collect the supported resolutions that are at least as big as the preview Surface
-        List<Size> bigEnough = new ArrayList<>();
-        // Collect the supported resolutions that are smaller than the preview Surface
-        List<Size> notBigEnough = new ArrayList<>();
+        List<Size> bigEnough = new ArrayList<Size>();
         int w = aspectRatio.getWidth();
         int h = aspectRatio.getHeight();
+        double ratio = (double) h / w;
         for (Size option : choices) {
-            if (option.getWidth() <= maxWidth && option.getHeight() <= maxHeight &&
-                    option.getHeight() == option.getWidth() * h / w) {
-                if (option.getWidth() >= textureViewWidth &&
-                        option.getHeight() >= textureViewHeight) {
-                    bigEnough.add(option);
-                } else {
-                    notBigEnough.add(option);
-                }
+            double optionRatio = (double) option.getHeight() / option.getWidth();
+            if (ratio == optionRatio) {
+                bigEnough.add(option);
             }
         }
 
-        // Pick the smallest of those big enough. If there is no one big enough, pick the
-        // largest of those not big enough.
+        // Pick the smallest of those, assuming we found any
         if (bigEnough.size() > 0) {
             return Collections.min(bigEnough, new CompareSizesByArea());
-        } else if (notBigEnough.size() > 0) {
-            return Collections.max(notBigEnough, new CompareSizesByArea());
         } else {
             Log.e(TAG, "Couldn't find any suitable preview size");
-            return choices[0];
+            return choices[1];
         }
     }
 
@@ -331,7 +319,7 @@ public class Camera2BasicFragment extends Fragment
     public void onViewCreated(final View view, Bundle savedInstanceState) {
         view.findViewById(R.id.picture).setOnClickListener(this);
         view.findViewById(R.id.info).setOnClickListener(this);
-        mTextureView = (AutoFitTextureView) view.findViewById(R.id.texture);
+        mTextureView = (TextureView) view.findViewById(R.id.texture);
     }
 
     @Override
@@ -411,71 +399,25 @@ public class Camera2BasicFragment extends Fragment
                     continue;
                 }
 
-                // Find out if we need to swap dimension to get the preview size relative to sensor
-                // coordinate.
-                int displayRotation = activity.getWindowManager().getDefaultDisplay().getRotation();
-                //noinspection ConstantConditions
-                mSensorOrientation = characteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
-                boolean swappedDimensions = false;
-                switch (displayRotation) {
-                    case Surface.ROTATION_0:
-                    case Surface.ROTATION_180:
-                        if (mSensorOrientation == 90 || mSensorOrientation == 270) {
-                            swappedDimensions = true;
-                        }
-                        break;
-                    case Surface.ROTATION_90:
-                    case Surface.ROTATION_270:
-                        if (mSensorOrientation == 0 || mSensorOrientation == 180) {
-                            swappedDimensions = true;
-                        }
-                        break;
-                    default:
-                        Log.e(TAG, "Display rotation is invalid: " + displayRotation);
-                }
-
-                Point displaySize = new Point();
-                activity.getWindowManager().getDefaultDisplay().getSize(displaySize);
-                int rotatedPreviewWidth = width;
-                int rotatedPreviewHeight = height;
-                int maxPreviewWidth = displaySize.x;
-                int maxPreviewHeight = displaySize.y;
-
-                if (swappedDimensions) {
-                    rotatedPreviewWidth = height;
-                    rotatedPreviewHeight = width;
-                    maxPreviewWidth = displaySize.y;
-                    maxPreviewHeight = displaySize.x;
-                }
-
-                if (maxPreviewWidth > MAX_PREVIEW_WIDTH) {
-                    maxPreviewWidth = MAX_PREVIEW_WIDTH;
-                }
-
-                if (maxPreviewHeight > MAX_PREVIEW_HEIGHT) {
-                    maxPreviewHeight = MAX_PREVIEW_HEIGHT;
-                }
-
                 mVideoSize = chooseHighSpeedVideoSize(map.getHighSpeedVideoSizes());
 
+                mPreviewSize = mVideoSize;
                 //mVideoFps = map.getHighSpeedVideoFpsRangesFor(mVideoSize);
 
                 // Danger, W.R.! Attempting to use too large a preview size could  exceed the camera
                 // bus' bandwidth limitation, resulting in gorgeous previews but the storage of
                 // garbage capture data.
-                mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class),
-                        rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth,
-                        maxPreviewHeight, mVideoSize);
+                //mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class), map.getHighSpeedVideoSizes(), mVideoSize);
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
                 int orientation = getResources().getConfiguration().orientation;
-                if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
+                /*if (orientation == Configuration.ORIENTATION_LANDSCAPE) {
                     mTextureView.setAspectRatio(
                             mPreviewSize.getWidth(), mPreviewSize.getHeight());
                 } else {
                     mTextureView.setAspectRatio(
                             mPreviewSize.getHeight(), mPreviewSize.getWidth());
-                }
+                }*/
 
                 // Check if the flash is supported.
                 Boolean available = characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
@@ -506,7 +448,7 @@ public class Camera2BasicFragment extends Fragment
         Log.d("FILE PATH", mVideoAbsPath);
 
         mMediaRecorder.setOutputFile(mVideoAbsPath);
-        mMediaRecorder.setVideoEncodingBitRate(20000000);
+        mMediaRecorder.setVideoEncodingBitRate(512000);
         mMediaRecorder.setVideoFrameRate(120);
         mMediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
         mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.MPEG_4_SP);
@@ -733,10 +675,17 @@ public class Camera2BasicFragment extends Fragment
             mediaScanIntent.setData(contentUri);
             getActivity().sendBroadcast(mediaScanIntent);
 
-            //start activity to process file
-            final Intent startProcessingFromFile = new Intent(getActivity(), FileVideoCaptureActivity.class);
+            Intent resultIntent = new Intent(SeedCounterConstants.FILE_PATH_EXTRA);
+            resultIntent.putExtra(SeedCounterConstants.FILE_PATH_EXTRA, mVideoAbsPath);
+            getActivity().setResult(SeedCounterConstants.CAMERA_RESULT_SUCCESS, resultIntent);
+
+            getActivity().finish();
+
+            /*final Intent startProcessingFromFile = new Intent(getActivity(), FileVideoCaptureActivity.class);
             startProcessingFromFile.putExtra(SeedCounterConstants.FILE_PATH_EXTRA, mVideoAbsPath);
-            startActivity(startProcessingFromFile);
+            startActivity(startProcessingFromFile);*/
+
+
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -747,7 +696,7 @@ public class Camera2BasicFragment extends Fragment
      */
     @RequiresApi(api = Build.VERSION_CODES.M)
     private void startVideoCapture() {
-      //  lockFocus();
+
         mRecording = true;
         surfaces.clear();
 
@@ -785,20 +734,6 @@ public class Camera2BasicFragment extends Fragment
             io.printStackTrace();
         }
         mMediaRecorder.start();
-    }
-
-    /**
-     * Retrieves the JPEG orientation from the specified screen rotation.
-     *
-     * @param rotation The screen rotation.
-     * @return The JPEG orientation (one of 0, 90, 270, and 360)
-     */
-    private int getOrientation(int rotation) {
-        // Sensor orientation is 90 for most devices, or 270 for some devices (eg. Nexus 5X)
-        // We have to take that into account and rotate JPEG properly.
-        // For devices with orientation of 90, we simply return our mapping from ORIENTATIONS.
-        // For devices with orientation of 270, we need to rotate the JPEG 180 degrees.
-        return (ORIENTATIONS.get(rotation) + mSensorOrientation + 270) % 360;
     }
 
     @RequiresApi(api = Build.VERSION_CODES.M)

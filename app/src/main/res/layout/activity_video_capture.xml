@@ -5,8 +5,9 @@
     android:layout_height="match_parent" >
 
     <edu.ksu.wheatgenetics.seedcounter.HighSpeedCameraView
-        android:layout_width="fill_parent"
-        android:layout_height="fill_parent"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_gravity="center"
         android:visibility="gone"
         android:id="@+id/java_camera_view"
         opencv:show_fps="true"

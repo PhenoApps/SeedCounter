@@ -17,7 +17,14 @@ class SeedCounterConstants {
     //requests
     final static int PERM_REQUEST = 101;
     final static int LOAD_REQUEST = 100;
+    final static int CAMERA_FILE_REQUEST = 102;
+
+    //results
+    final static int CAMERA_RESULT_SUCCESS = 200;
 
     //extras
     final static String FILE_PATH_EXTRA = "edu.ksu.wheatgenetics.seedcounter.FILE_URI_EXTRA";
+
+    //Messages
+    static final String MESSAGE_JOB_FILEPATH = "edu.ksu.wheatgenetics.seedcounter.MESSAGE_JOB_FILEPATH";
 }

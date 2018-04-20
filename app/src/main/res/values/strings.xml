@@ -29,6 +29,12 @@
     <string name="param_default_size_lower_bound_ratio">0.25</string>
     <string name="param_default_new_seed_dist_ratio">4.0</string>
 
+    <!-- Button Strings -->
+    <string name="button_start_job">Start Job</string>
+
+    <!-- Dialog strings -->
+    <string name="choose_job_type">Choose job type.</string>
+
     <!-- Intro Strings -->
     <string name="intro_title_1">Welcome to Seed Counter!</string>
     <string name="intro_title_2"></string>

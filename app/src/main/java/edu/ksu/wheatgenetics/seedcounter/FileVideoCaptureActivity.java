@@ -7,16 +7,14 @@ import android.content.SharedPreferences;
 import android.database.Cursor;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.graphics.Color;
-import android.graphics.Matrix;
 import android.net.Uri;
-import android.os.Build;
+import android.os.AsyncTask;
 import android.os.Bundle;
 import android.os.Environment;
+import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
-import android.provider.Settings;
 import android.support.annotation.NonNull;
 import android.support.design.widget.NavigationView;
 import android.support.v4.app.ActivityCompat;
@@ -29,6 +27,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -41,24 +40,13 @@ import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegNotSupportedExceptio
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
 import org.opencv.android.OpenCVLoader;
-import org.opencv.android.Utils;
-import org.opencv.core.Core;
-import org.opencv.core.CvType;
-import org.opencv.core.Mat;
-import org.opencv.core.MatOfPoint;
-import org.opencv.core.Point;
-import org.opencv.core.Scalar;
-import org.opencv.core.Size;
-import org.opencv.imgproc.Imgproc;
-import org.opencv.imgproc.Moments;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.Queue;
-import java.util.Timer;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
+import java.util.Stack;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingDeque;
+import java.util.concurrent.LinkedBlockingQueue;
 
 import static android.content.pm.PackageManager.PERMISSION_DENIED;
 
@@ -68,16 +56,16 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
 
     static {System.loadLibrary("opencv_java3");}
 
-    final ScheduledExecutorService mScheduler =
-            Executors.newScheduledThreadPool(1);
+    private double mTotalSeconds;
 
-    private Bitmap mBitmap;
+    private BlockingQueue mQueue;
+
+    private int mPrevFrameCount;
 
     //seed counter utility
     private SeedCounter mSeedCounter;
 
     //android views
-    private ImageView mSurfaceView;
     private TextView mTextView;
     private ActionBarDrawerToggle mDrawerToggle;
     private DrawerLayout mDrawerLayout;
@@ -146,9 +134,9 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
-        mSurfaceView = (ImageView) findViewById(R.id.surfaceView);
-        mSurfaceView.setEnabled(true);
-        mSurfaceView.setVisibility(ImageView.VISIBLE);
+        mPrevFrameCount = 0;
+
+        mQueue = new LinkedBlockingQueue();
 
         ActivityCompat.requestPermissions(this, SeedCounterConstants.permissions, SeedCounterConstants.PERM_REQUEST);
     }
@@ -170,8 +158,8 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
             if (noneDenied) {
                 final Intent callingIntent = getIntent();
                 if (callingIntent.hasExtra(SeedCounterConstants.FILE_PATH_EXTRA)) {
-                    final String filePath = callingIntent.getStringExtra(SeedCounterConstants.FILE_PATH_EXTRA);
-                    scheduleFFmpeg(filePath, true);
+                    String path = callingIntent.getStringExtra(SeedCounterConstants.FILE_PATH_EXTRA);
+                    startProcessing(path);
                 } else {
                     final Intent i = new Intent(Intent.ACTION_GET_CONTENT);
                     i.setType("*/*");
@@ -183,7 +171,43 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
         }
     }
 
-    @Override
+    private void startProcessing(final String path) {
+
+        final FFmpeg ffmpeg = FFmpeg.getInstance(FileVideoCaptureActivity.this);
+
+        //first get fps and time information from the input file.
+        try {
+            ffmpeg.execute(
+                    new String[]{"-i", path},
+                    new ExecuteBinaryResponseHandler() {
+
+                        @Override
+                        public void onProgress(String msg) {
+
+                            Log.d("PROG", msg);
+
+                            if (msg.contains("Duration")) {
+
+                                parseVideoInfo(msg);
+
+                                new ExtractFramesTask().execute(path);
+
+                                ((ProgressBar) findViewById(R.id.progressBar))
+                                        .setVisibility(View.VISIBLE);
+
+                                mTextView.setText("Extracting frames from high speed video.");
+
+                                ffmpeg.killRunningProcesses();
+                            }
+                        }
+                    });
+
+        } catch(FFmpegCommandAlreadyRunningException e) {
+            e.printStackTrace();
+        }
+
+    }
+
     protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
         super.onActivityResult(requestCode, resultCode, intent);
 
@@ -192,7 +216,7 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
 
                 String path = getPath(intent.getData());
 
-                scheduleFFmpeg(path, false);
+                startProcessing(path);
             }
         }
     }
@@ -300,111 +324,172 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
         }).start();
     }
 
-    public void nextFrame(Bitmap inputFrame, boolean fromCall) {
+    public void nextFrame(final File dir, final int frameCount) {
 
-        final Bitmap retBitmap;
+      //create a thread to start and wait until processing finishes
+        Thread t = new Thread(new Runnable() {
 
-        if (fromCall) {
-            //Matrix matrix = new Matrix();
-           // matrix.postRotate(-90);
+            public void run() {
 
-            retBitmap = mSeedCounter.process(
-                    Bitmap.createBitmap(inputFrame, 0, 0,
-                            inputFrame.getWidth(), inputFrame.getHeight(), null, true));
+                if (dir.isDirectory()) {
 
-        } else retBitmap = mSeedCounter.process(inputFrame);
+                    final File[] children = dir.listFiles();
+                    final File[] nextFrames = new File[frameCount - mPrevFrameCount];
 
+                    int j = 0;
+                    for (int i = mPrevFrameCount; i < frameCount; i++) {
+                        nextFrames[j++] = children[i];
+                    }
+
+                    mPrevFrameCount = frameCount;
+
+                    for (int i = 0; i < nextFrames.length; i++) {
+
+                        mSeedCounter.process(
+                                BitmapFactory.decodeFile(
+                                        nextFrames[i].getPath()));
+
+                        mTextView.post(new Runnable() {
+                            public void run() {
+                                mTextView.setText(String.valueOf(
+                                        mSeedCounter.getNumSeeds()
+                                ));
+                            }
+                        });
+
+                        mTextView.postInvalidate();
+                    }
+                }
+            }
+        });
+
+        //actually begin and wait until thread is finished counting the given frames
+        try {
+            t.start();
+            t.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    private void updateFFmpegMsgView(final String progress) {
         this.runOnUiThread(new Runnable() {
             @Override
             public void run() {
-                mTextView.setText(String.valueOf(mSeedCounter.getNumSeeds()));
-                mSurfaceView.setImageBitmap(retBitmap);
-                mSurfaceView.invalidate();
+                ((TextView) findViewById(R.id.progressView))
+                        .setText(progress);
+
+                String[] time = progress.split("time=")[1].split(" ")[0].split(":");
+                double current = Integer.valueOf(time[0]) * 360
+                        + Integer.valueOf(time[1]) * 60
+                        + Double.valueOf(time[2]);
+
+                ((ProgressBar) findViewById(R.id.progressBar))
+                        .setProgress((int) (100.0 * (current / mTotalSeconds)));
             }
         });
     }
 
-    private void scheduleFFmpeg(final String path, final boolean fromCall) {
+    private void parseVideoInfo(String msg) {
 
-        if (isExternalStorageWritable()) {
+        String[] time = msg.split("Duration: ")[1].split(",")[0].split(":");
+        mTotalSeconds = Integer.valueOf(time[0]) * 360
+                + Integer.valueOf(time[1]) * 60
+                + Double.valueOf(time[2]);
 
-            final File seedCounterDir = new File(Environment.getExternalStorageDirectory(), "SeedCounter");
-
-            final File[] children = seedCounterDir.listFiles();
-            for (File f : children) f.delete();
-
-            FFmpeg ffmpeg = FFmpeg.getInstance(this);
-
-            if (seedCounterDir.exists()) {
-                final String nextFramePath = seedCounterDir.getPath() + "/temp.bmp";
-                final ArrayList<String> cmd = new ArrayList<>();
-                cmd.add(cmd.size(), "-i");
-                cmd.add(cmd.size(), path);
-                cmd.add(cmd.size(), "-vf");
-                cmd.add(cmd.size(), "fps=60");
-                cmd.add(cmd.size(), "-updatefirst");
-                cmd.add(cmd.size(), "1");
-                cmd.add(cmd.size(), nextFramePath);
-                final String[] arrayCommands = cmd.toArray(new String[]{});
-                try {
-                    ffmpeg.execute(
-                            arrayCommands,
-                            new ExecuteBinaryResponseHandler() {
-                                @Override
-                                public void onSuccess(String msg) {
-                                    Log.d("DEBUG", msg);
-                                }
-
-                                @Override
-                                public void onFailure(String msg) {
-                                   // Log.d("DEBUG", msg);
-                                }
-
-                                @Override
-                                public void onProgress(String msg) {
-                                   // Log.d("DEBUG", msg);
-                                }
-                            });
-                } catch (FFmpegCommandAlreadyRunningException e) {
-                    Log.d("DEBUG", "command already running");
-                }
-
-                mScheduler.scheduleAtFixedRate(new Runnable() {
-                    @Override
-                    public void run() {
-                        final File f = new File(nextFramePath);
-                        //Log.d("FLENGTH", String.valueOf(f.getFreeSpace()) + ":" + String.valueOf(f.getTotalSpace()) + ":" + String.valueOf(f.getUsableSpace()) + ":" + String.valueOf(f.length()));
-                        if (f.exists()) {
-                            mBitmap = BitmapFactory.decodeFile(f.getPath());
-
-                            if (mBitmap != null) {
-
-                                //naive check ensuring mBitmap is not currently being
-                                //written too (checks if most of the first 16 pixels are black)
-                                int[] isCorrupted = new int[16];
-                                int total = 0;
-                                for (int i = 0; i < 16; i = i + 1) {
-                                    if (mBitmap.getPixel(i, 0) == Color.BLACK)
-                                        isCorrupted[i] = 1;
-                                }
-                                for (int i : isCorrupted)
-                                    total += i;
-                                if (total < 8) {
-                                    final Bitmap newBitmap =
-                                            Bitmap.createBitmap(mBitmap);
-                                    nextFrame(newBitmap, fromCall);
-                                }
-                            }
-                        }
-                    }
-                }, 0, 1, TimeUnit.MICROSECONDS);
-
-            } else if (!seedCounterDir.mkdirs())
-                Log.d("SeedCounterFS", "failed to create Seedcounter directory");
-        } else Toast.makeText(this, "Default storage not writable.", Toast.LENGTH_LONG).show();
     }
 
-    public boolean isExternalStorageWritable() {
+    private class ExtractFramesTask extends AsyncTask<String, String, Void> {
+
+        @Override
+        protected Void doInBackground(String... strings) {
+
+            final String path = strings[0];
+
+            if (isExternalStorageWritable()) {
+
+                File vidFile = new File(path);
+                final File tempDir = new File(vidFile.getParent() + "temp");
+
+                if (tempDir.mkdir()) {
+                    Log.d("TempFolder", "Created successfully.");
+                } else Log.d("TempFolder", "Not created successfully.");
+
+
+                File[] children = tempDir.listFiles();
+                for (File f : children) {
+                    if(f.delete()) {
+                        Log.d("TempFolder", "Deleted successfully.");
+                    } else Log.d("TempFolder", "Not deleted successfully.");
+                }
+
+                final FFmpeg ffmpeg = FFmpeg.getInstance(FileVideoCaptureActivity.this);
+
+                if (tempDir.exists()) {
+
+                    String nextFramePath = tempDir.getPath() + "/temp%d.jpg";
+                    try {
+                        ffmpeg.execute(
+
+                                //ffmpeg commands
+                                new String[]{"-i", path, nextFramePath},
+
+                                //class to control messages sent by ffmpeg lib
+                                new ExecuteBinaryResponseHandler() {
+
+                                    @Override
+                                    public void onSuccess(String msg) {
+
+                                        Log.d("SUCCESS", msg);
+                                        //nextFrame(tempDir, 0);
+
+                                    }
+
+                                    @Override
+                                    public void onFailure(String msg) {
+
+                                        publishProgress(msg);
+
+                                        Log.d("FAILURE", msg);
+                                    }
+
+                                    @Override
+                                    public void onProgress(String msg) {
+
+                                        publishProgress(msg);
+
+                                        if (msg.contains("frame=")) {
+                                            int frameCount = Integer.valueOf(
+                                                    msg.split("frame=\\s+")[1].split(" ")[0]
+                                            );
+                                            nextFrame(tempDir, frameCount);
+                                        }
+
+                                        Log.d("PROGRESS", msg);
+                                    }
+                                });
+                    } catch (FFmpegCommandAlreadyRunningException e) {
+                        Log.d("DEBUG", "command already running");
+                    }
+
+                } else if (!tempDir.mkdirs())
+                    Log.d("SeedCounterFS", "failed to create Seedcounter directory");
+
+            } else Toast.makeText(FileVideoCaptureActivity.this,
+                    "Default storage not writable.", Toast.LENGTH_LONG).show();
+
+            return null;
+        }
+
+        protected void onProgressUpdate(String... progress) {
+            if (progress[0].contains("time="))
+                updateFFmpegMsgView(progress[0]);
+        }
+
+    }
+
+    private static boolean isExternalStorageWritable() {
 
         String state = Environment.getExternalStorageState();
         if (Environment.MEDIA_MOUNTED.equals(state)) {
