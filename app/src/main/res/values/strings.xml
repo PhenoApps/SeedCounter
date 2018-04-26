@@ -33,7 +33,7 @@
     <string name="button_start_job">Start Job</string>
 
     <!-- Dialog strings -->
-    <string name="choose_job_type">Choose job type.</string>
+    <string name="choose_job_type">Choose job type and name.</string>
 
     <!-- Intro Strings -->
     <string name="intro_title_1">Welcome to Seed Counter!</string>
@@ -49,5 +49,13 @@
     <string name="start_with_file">Process With File</string>
     <string name="button_stop">STOP</string>
     <string name="button_start">START</string>
+
+    <!-- Dialog text -->
+    <string name="dialog_new_job">Enter an optional job name:</string>
+
+    <!-- Error text -->
+    <string name="error_storage">Default storage not writable.</string>
+    <string name="error_temp_dir_creation">Failed to create SeedCounter directory.</string>
+
 
 </resources>

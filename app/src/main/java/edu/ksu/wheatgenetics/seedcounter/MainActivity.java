@@ -1,14 +1,20 @@
 package edu.ksu.wheatgenetics.seedcounter;
 
+import android.content.ContentUris;
 import android.content.Context;
 import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.database.Cursor;
 import android.graphics.BitmapFactory;
+import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Debug;
 import android.os.Environment;
 import android.preference.PreferenceManager;
+import android.provider.DocumentsContract;
+import android.provider.MediaStore;
 import android.support.annotation.NonNull;
 import android.support.design.widget.NavigationView;
 import android.support.v4.app.ActivityCompat;
@@ -32,15 +38,19 @@ import android.widget.Toast;
 
 import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler;
 import com.github.hiteshsondhi88.libffmpeg.FFmpeg;
+import com.github.hiteshsondhi88.libffmpeg.LoadBinaryResponseHandler;
 import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegCommandAlreadyRunningException;
+import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegNotSupportedException;
 
 import org.opencv.android.BaseLoaderCallback;
 import org.opencv.android.LoaderCallbackInterface;
+import org.opencv.android.OpenCVLoader;
 import org.opencv.videoio.VideoCapture;
 import org.w3c.dom.Text;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
 
@@ -55,7 +65,9 @@ public class MainActivity extends AppCompatActivity {
     private DrawerLayout mDrawerLayout;
     private NavigationView mNavView;
 
-    private int mPrevFrameCount;
+    private ArrayList<Progress> mJobOutput;
+
+    private FFmpeg mMpeg;
 
     private BaseLoaderCallback mLoaderCallback = new BaseLoaderCallback(this) {
         @Override
@@ -73,12 +85,18 @@ public class MainActivity extends AppCompatActivity {
         }
     };
 
-    private FFmpeg mMpeg;
-
-    final SeedCounter.SeedCounterParams params =
-            new SeedCounter.SeedCounterParams(200, 16000, 34, 0.25, 4.0);
-
-    final private SeedCounter mSeedCounter = new SeedCounter(params);
+    @Override
+    public void onResume()
+    {
+        super.onResume();
+        if (!OpenCVLoader.initDebug()) {
+            Log.d("OpenCV", "Internal OpenCV library not found. Using OpenCV Manager for initialization");
+            OpenCVLoader.initAsync(OpenCVLoader.OPENCV_VERSION_3_0_0, this, mLoaderCallback);
+        } else {
+            Log.d("OpenCV", "OpenCV library found inside package. Using it!");
+            mLoaderCallback.onManagerConnected(LoaderCallbackInterface.SUCCESS);
+        }
+    }
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -87,11 +105,33 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_main);
 
+        mJobOutput = new ArrayList<Progress>();
+
         initializeUI();
 
         mMpeg = FFmpeg.getInstance(this);
 
-        ActivityCompat.requestPermissions(this, SeedCounterConstants.permissions, SeedCounterConstants.PERM_REQUEST);
+        try {
+            mMpeg.loadBinary(new LoadBinaryResponseHandler() {
+
+                @Override
+                public void onStart() {}
+
+                @Override
+                public void onFailure() {}
+
+                @Override
+                public void onSuccess() {}
+
+                @Override
+                public void onFinish() {}
+            });
+        } catch (FFmpegNotSupportedException e) {
+            // Handle if FFmpeg is not supported by device
+        }
+
+        ActivityCompat.requestPermissions(MainActivity.this, SeedCounterConstants.permissions, SeedCounterConstants.PERM_REQUEST);
+
     }
 
 
@@ -116,12 +156,17 @@ public class MainActivity extends AppCompatActivity {
             public void onClick(View view) {
                 AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
 
+                builder.setView(R.layout.dialog_new_job);
+
                 builder.setTitle(R.string.choose_job_type);
 
                 builder.setPositiveButton("File", new DialogInterface.OnClickListener() {
                     @Override
                     public void onClick(DialogInterface dialog, int which) {
-                        startActivity(new Intent(MainActivity.this, FileVideoCaptureActivity.class));
+                        final Intent i = new Intent(Intent.ACTION_GET_CONTENT);
+                        i.setType("*/*");
+                        startActivityForResult(Intent.createChooser(i, "Choose file to import."),
+                                SeedCounterConstants.LOAD_REQUEST);
                     }
                 });
 
@@ -138,7 +183,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        ((ListView) findViewById(R.id.listView)).setAdapter(new ArrayAdapter<String>(this, R.layout.row));
+        ((ListView) findViewById(R.id.listView)).setAdapter(new ProgressArrayAdapter(this, R.layout.row, mJobOutput));
     }
 
 
@@ -148,23 +193,56 @@ public class MainActivity extends AppCompatActivity {
         if (resultCode == SeedCounterConstants.CAMERA_RESULT_SUCCESS) {
             enqueue((String) intent.getExtras()
                     .get(SeedCounterConstants.FILE_PATH_EXTRA));
+        } else if (requestCode == SeedCounterConstants.LOAD_REQUEST) {
+            if (resultCode == RESULT_OK) {
+
+                String path = getPath(intent.getData());
+
+                enqueue(path);
+            }
         }
     }
 
-    private void enqueue(String filePath) {
+    private void enqueue(final String filePath) {
 
-        ListView list = (ListView) findViewById(R.id.listView);
-        ArrayAdapter<String> updatedAdapter = new ArrayAdapter<>(this, R.layout.row);
-        final int oldSize = list.getAdapter().getCount();
+        final Progress p = new Progress(filePath);
 
-        for (int i = 0; i < oldSize; i++) {
-            final String temp = (String) list.getAdapter().getItem(i);
-            updatedAdapter.add(temp);
-        }
-        updatedAdapter.add(filePath);
-        list.setAdapter(updatedAdapter);
 
-        startProcessing(filePath);
+
+        final ListView listView = (ListView) findViewById(R.id.listView);
+
+        mJobOutput.add(p);
+
+
+        Job job = new Job(p, mMpeg);
+
+        job.callback = new Job.OutputCallback() {
+
+            @Override
+            public void outputEvent(Progress p) {
+
+                final ListView listView = (ListView) findViewById(R.id.listView);
+
+                Iterator<Progress> iter = mJobOutput.iterator();
+                Progress temp;
+                while (iter.hasNext()) {
+                    temp = iter.next();
+                    if (temp.getId().equals(p.getId())) {
+                        mJobOutput.set(mJobOutput.indexOf(temp), p);
+                    }
+                }
+
+                listView.setAdapter(new ProgressArrayAdapter(MainActivity.this, R.layout.row, mJobOutput));
+
+            }
+
+            @Override
+            public void errorEvent(int error) {
+
+                Toast.makeText(MainActivity.this, getResources().getString(error),
+                        Toast.LENGTH_SHORT).show();
+            }
+        };
     }
 
     private void setupDrawer() {
@@ -246,210 +324,88 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private void startProcessing(final String path) {
+    //based on https://github.com/iPaulPro/aFileChooser/blob/master/aFileChooser/src/com/ipaulpro/afilechooser/utils/FileUtils.java
+    public String getPath(Uri uri) {
 
-        //first get fps and time information from the input file.
-        try {
-            mMpeg.execute(
+        // DocumentProvider
+        if (DocumentsContract.isDocumentUri(this, uri)) {
+            // LocalStorageProvider
+            if ("com.android.externalstorage.documents".equals(uri.getAuthority())) {
+                final String docId = DocumentsContract.getDocumentId(uri);
+                final String[] split = docId.split(":");
+                final String type = split[0];
 
-                    new String[]{"-i", path},
-
-                    new ExecuteBinaryResponseHandler() {
-
-                        @Override
-                        public void onProgress(String msg) {
-
-                            Log.d("PROG", msg);
-
-                            if (msg.contains("Duration")) {
-
-                                parseVideoInfo(msg);
-
-                                new ExtractFramesTask().execute(path);
-
-                                mMpeg.killRunningProcesses();
-                            }
-                        }
-                    });
-
-        } catch(FFmpegCommandAlreadyRunningException e) {
-            e.printStackTrace();
-        }
-
-    }
-
-    public void nextFrame(final File dir, final int frameCount) {
-
-        //create a thread to start and wait until processing finishes
-        Thread t = new Thread(new Runnable() {
-
-            public void run() {
-
-                if (dir.isDirectory()) {
-
-                    final File[] children = dir.listFiles();
-                    final File[] nextFrames = new File[frameCount - mPrevFrameCount];
-
-                    int j = 0;
-                    for (int i = mPrevFrameCount; i < frameCount; i++) {
-                        nextFrames[j++] = children[i];
-                    }
-
-                    mPrevFrameCount = frameCount;
-
-                    for (int i = 0; i < nextFrames.length; i++) {
-
-                        mSeedCounter.process(
-                                BitmapFactory.decodeFile(
-                                        nextFrames[i].getPath()));
-
-                        final TextView tv = (TextView) findViewById(R.id.textView);
-
-                        tv.post(new Runnable() {
-                            public void run() {
-                                tv.setText(String.valueOf(
-                                        mSeedCounter.getNumSeeds()
-                                ));
-                            }
-                        });
-
-                        tv.postInvalidate();
-                    }
-                }
-            }
-        });
-
-        //actually begin and wait until thread is finished counting the given frames
-        try {
-            t.start();
-            t.join();
-        } catch (InterruptedException e) {
-            e.printStackTrace();
-        }
-
-    }
-
-    /*private void updateFFmpegMsgView(final String progress) {
-        this.runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                ((TextView) findViewById(R.id.progressView))
-                        .setText(progress);
-
-                String[] time = progress.split("time=")[1].split(" ")[0].split(":");
-                double current = Integer.valueOf(time[0]) * 360
-                        + Integer.valueOf(time[1]) * 60
-                        + Double.valueOf(time[2]);
-
-                ((ProgressBar) findViewById(R.id.progressBar))
-                        .setProgress((int) (100.0 * (current / mTotalSeconds)));
-            }
-        });
-    }*/
-
-    private void parseVideoInfo(String msg) {
-
-        /*String[] time = msg.split("Duration: ")[1].split(",")[0].split(":");
-        mTotalSeconds = Integer.valueOf(time[0]) * 360
-                + Integer.valueOf(time[1]) * 60
-                + Double.valueOf(time[2]);*/
-
-    }
-
-    private class ExtractFramesTask extends AsyncTask<String, String, Void> {
-
-        @Override
-        protected Void doInBackground(String... strings) {
-
-            final String path = strings[0];
-
-            if (isExternalStorageWritable()) {
-
-                File vidFile = new File(path);
-                final File tempDir = new File(vidFile.getParent() + "temp");
-
-                if (tempDir.mkdir()) {
-                    Log.d("TempFolder", "Created successfully.");
-                } else Log.d("TempFolder", "Not created successfully.");
-
-
-                File[] children = tempDir.listFiles();
-                for (File f : children) {
-                    if(f.delete()) {
-                        Log.d("TempFolder", "Deleted successfully.");
-                    } else Log.d("TempFolder", "Not deleted successfully.");
+                if ("primary".equalsIgnoreCase(type)) {
+                    return Environment.getExternalStorageDirectory() + "/" + split[1];
                 }
 
-                if (tempDir.exists()) {
+                // TODO handle non-primary volumes
+            }
+            // DownloadsProvider
+            else if ("com.android.providers.downloads.documents".equals(uri.getAuthority())) {
 
-                    String nextFramePath = tempDir.getPath() + "/temp%d.jpg";
-                    try {
-                        mMpeg.execute(
+                final String id = DocumentsContract.getDocumentId(uri);
+                final Uri contentUri = ContentUris.withAppendedId(
+                        Uri.parse("content://downloads/public_downloads"), Long.valueOf(id));
 
-                                //ffmpeg commands
-                                new String[]{"-i", path, nextFramePath},
+                return getDataColumn(this, contentUri, null, null);
+            }
+            // MediaProvider
+            else if ("com.android.providers.media.documents".equals(uri.getAuthority())) {
+                final String docId = DocumentsContract.getDocumentId(uri);
+                final String[] split = docId.split(":");
+                final String type = split[0];
 
-                                //class to control messages sent by ffmpeg lib
-                                new ExecuteBinaryResponseHandler() {
+                Uri contentUri = null;
+                if ("image".equals(type)) {
+                    contentUri = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                } else if ("video".equals(type)) {
+                    contentUri = MediaStore.Video.Media.EXTERNAL_CONTENT_URI;
+                } else if ("audio".equals(type)) {
+                    contentUri = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI;
+                }
 
-                                    @Override
-                                    public void onSuccess(String msg) {
+                final String selection = "_id=?";
+                final String[] selectionArgs = new String[] {
+                        split[1]
+                };
 
-                                        Log.d("SUCCESS", msg);
-                                        //nextFrame(tempDir, 0);
-
-                                    }
-
-                                    @Override
-                                    public void onFailure(String msg) {
-
-                                        publishProgress(msg);
-
-                                        Log.d("FAILURE", msg);
-                                    }
-
-                                    @Override
-                                    public void onProgress(String msg) {
-
-                                        publishProgress(msg);
-
-                                        if (msg.contains("frame=")) {
-                                            int frameCount = Integer.valueOf(
-                                                    msg.split("frame=\\s+")[1].split(" ")[0]
-                                            );
-                                            nextFrame(tempDir, frameCount);
-                                        }
-
-                                        Log.d("PROGRESS", msg);
-                                    }
-                                });
-                    } catch (FFmpegCommandAlreadyRunningException e) {
-                        Log.d("DEBUG", "command already running");
-                    }
-
-                } else if (!tempDir.mkdirs())
-                    Log.d("SeedCounterFS", "failed to create Seedcounter directory");
-
-            } else Toast.makeText(MainActivity.this,
-                    "Default storage not writable.", Toast.LENGTH_LONG).show();
-
-            return null;
+                return getDataColumn(this, contentUri, selection, selectionArgs);
+            }
         }
+        // MediaStore (and general)
+        else if ("content".equalsIgnoreCase(uri.getScheme())) {
 
-        /*protected void onProgressUpdate(String... progress) {
-            if (progress[0].contains("time="))
-                updateFFmpegMsgView(progress[0]);
-        }*/
+            // Return the remote address
+            if ("com.google.android.apps.photos.content".equals(uri.getAuthority()))
+                return uri.getLastPathSegment();
 
+            return getDataColumn(this, uri, null, null);
+        }
+        // File
+        else if ("file".equalsIgnoreCase(uri.getScheme())) {
+            return uri.getPath();
+        } else if ("com.estrongs.files".equals(uri.getAuthority())) {
+            return uri.getPath();
+        }
+        return null;
     }
 
-    private static boolean isExternalStorageWritable() {
+    public static String getDataColumn(Context context, Uri uri, String selection, String[] selectionArgs) {
 
-        String state = Environment.getExternalStorageState();
-        if (Environment.MEDIA_MOUNTED.equals(state)) {
-            return true;
+        Cursor cursor = null;
+        final String column = "_data";
+        final String[] projection = { column };
+        try {
+            cursor = context.getContentResolver().query(uri, projection, selection, selectionArgs, null);
+            if (cursor != null && cursor.moveToFirst()) {
+                final int index = cursor.getColumnIndexOrThrow(column);
+                return cursor.getString(index);
+            }
+        } finally {
+            if (cursor != null)
+                cursor.close();
         }
-        return false;
+        return null;
     }
-
 }

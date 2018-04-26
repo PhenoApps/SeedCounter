@@ -33,7 +33,6 @@
             android:theme="@style/AppTheme.NoActionBar">
         </activity>
         <activity android:name=".CameraActivity"></activity>
-        <activity android:name=".MediaRecorderActivity"></activity>
         <activity android:name=".FileVideoCaptureActivity"></activity>
     </application>
 </manifest>
