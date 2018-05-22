@@ -5,6 +5,7 @@ import android.content.Context;
 import android.database.Cursor;
 import android.graphics.BitmapFactory;
 import android.net.Uri;
+import android.os.AsyncTask;
 import android.os.Environment;
 import android.provider.DocumentsContract;
 import android.provider.MediaStore;
@@ -14,7 +15,9 @@ import android.widget.Toast;
 
 import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler;
 import com.github.hiteshsondhi88.libffmpeg.FFmpeg;
+import com.github.hiteshsondhi88.libffmpeg.LoadBinaryResponseHandler;
 import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegCommandAlreadyRunningException;
+import com.github.hiteshsondhi88.libffmpeg.exceptions.FFmpegNotSupportedException;
 
 import java.io.File;
 
@@ -33,15 +36,19 @@ class Job {
 
     private SeedCounter mSeedCounter;
 
-    private FFmpeg mMpeg;
+    private Context ctx;
 
     private Progress mProgress;
 
+    private int mFrameCount;
+
     OutputCallback callback;
 
-    Job(Progress p, FFmpeg ffmpeg) {
+    Job(Progress p, Context ctx, OutputCallback outputCallback) {
 
-        this.mMpeg = ffmpeg;
+        this.ctx = ctx;
+
+        mFrameCount = 0;
 
         mPrevFrameCount = 0;
 
@@ -52,6 +59,8 @@ class Job {
         mSeedCounter = new SeedCounter(params);
 
         mProgress = p;
+
+        callback = outputCallback;
 
         startProcessing(mProgress.getPath());
     }
@@ -94,53 +103,70 @@ class Job {
     }
 
 
-    private void executeProcessing(final String path, String nextFramePath, final File dir) {
+    private void executeProcessing(final String path, final String nextFramePath, final File dir) {
+
+        mProgress.setProgress("SLICING");
+
+        callback.outputEvent(mProgress);
+
+        final FFmpeg mMpeg = FFmpeg.getInstance(ctx);
 
         try {
-            mMpeg.execute(
+            mMpeg.loadBinary(new LoadBinaryResponseHandler() {
 
-                //ffmpeg commands
-                new String[]{"-i", path, nextFramePath},
+                @Override
+                public void onStart() {}
 
-                //class to control messages sent by ffmpeg lib
-                new ExecuteBinaryResponseHandler() {
+                @Override
+                public void onFailure() {}
 
-                    @Override
-                    public void onSuccess(String msg) {
+                @Override
+                public void onSuccess() {
+                    try {
+                        mMpeg.execute(
 
-                        mProgress.setProgress(String.valueOf(
-                                mSeedCounter.getNumSeeds()
-                        ));
+                                //ffmpeg commands
+                                new String[]{"-i", path, nextFramePath},
 
-                        callback.outputEvent(mProgress);
-                    }
+                                //class to control messages sent by ffmpeg lib
+                                new ExecuteBinaryResponseHandler() {
 
-                    @Override
-                    public void onProgress(String msg) {
+                                    @Override
+                                    public void onSuccess(String msg) {
 
-                        //publishProgress(msg);
+                                        mProgress.setProgress("COUNTING");
 
-                        if (msg.contains("frame=")) {
-                            int frameCount = Integer.valueOf(
-                                    msg.split("frame=\\s+")[1].split(" ")[0]
-                            );
-                            nextFrame(dir, frameCount);
-                        }
+                                        callback.outputEvent(mProgress);
 
-                        mProgress.setProgress(String.valueOf(
-                                mSeedCounter.getNumSeeds()
-                        ));
+                                        nextFrame(dir, mFrameCount);
 
-                        callback.outputEvent(mProgress);
+                                    }
 
-                        Log.d("PROGRESS", msg);
+                                    @Override
+                                    public void onProgress(String msg) {
+
+                                        //publishProgress(msg);
+
+                                        if (msg.contains("frame=")) {
+                                            mFrameCount = Integer.valueOf(
+                                                    msg.split("frame=\\s+")[1].split(" ")[0]
+                                            );
+                                        }
+
+                                    }
+                                }
+                        );
+                    } catch (FFmpegCommandAlreadyRunningException e) {
+                        Log.d("DEBUG", "command already running");
                     }
                 }
-            );
-        } catch (FFmpegCommandAlreadyRunningException e) {
-            Log.d("DEBUG", "command already running");
-        }
 
+                @Override
+                public void onFinish() {}
+            });
+        } catch (FFmpegNotSupportedException e) {
+            // Handle if FFmpeg is not supported by device
+        }
     }
 
     private void nextFrame(final File dir, final int frameCount) {
@@ -157,14 +183,30 @@ class Job {
 
             mPrevFrameCount = frameCount;
 
-            for (int i = 0; i < nextFrames.length; i++) {
 
-                mSeedCounter.process(
-                        BitmapFactory.decodeFile(
-                                nextFrames[i].getPath()));
+            Thread t = new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    for (int i = 0; i < nextFrames.length; i++) {
+
+                        mSeedCounter.process(
+                                BitmapFactory.decodeFile(
+                                        nextFrames[i].getPath()));
+
+                    }
+                    mProgress.setProgress(String.valueOf(
+                            mSeedCounter.getNumSeeds()
+                    ));
+
+                    callback.outputEvent(mProgress);
+                }
+            });
+
+            Log.d("THREAD", "START");
+            t.start();
 
 
-            }
+
         }
 
     }

@@ -343,7 +343,7 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
 
                     mPrevFrameCount = frameCount;
 
-                    for (int i = 0; i < nextFrames.length; i++) {
+                    /*for (int i = 0; i < nextFrames.length; i++) {
 
                         mSeedCounter.process(
                                 BitmapFactory.decodeFile(
@@ -358,7 +358,7 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
                         });
 
                         mTextView.postInvalidate();
-                    }
+                    }*/
                 }
             }
         });

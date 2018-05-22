@@ -205,34 +205,39 @@ public class MainActivity extends AppCompatActivity {
 
     private void enqueue(final String filePath) {
 
+        //((Button) findViewById(R.id.newJobButton)).setEnabled(false);
+
         final Progress p = new Progress(filePath);
-
-
 
         final ListView listView = (ListView) findViewById(R.id.listView);
 
         mJobOutput.add(p);
 
-
-        Job job = new Job(p, mMpeg);
-
-        job.callback = new Job.OutputCallback() {
+        Job job = new Job(p, this, new Job.OutputCallback() {
 
             @Override
-            public void outputEvent(Progress p) {
+            public void outputEvent(final Progress p) {
+
 
                 final ListView listView = (ListView) findViewById(R.id.listView);
 
-                Iterator<Progress> iter = mJobOutput.iterator();
-                Progress temp;
-                while (iter.hasNext()) {
-                    temp = iter.next();
-                    if (temp.getId().equals(p.getId())) {
-                        mJobOutput.set(mJobOutput.indexOf(temp), p);
-                    }
-                }
+                listView.post(new Runnable() {
+                    @Override
+                    public void run() {
+                        Iterator<Progress> iter = mJobOutput.iterator();
+                        Progress temp;
+                        while (iter.hasNext()) {
+                            temp = iter.next();
+                            if (temp.getId().equals(p.getId())) {
+                                mJobOutput.set(mJobOutput.indexOf(temp), p);
+                            }
+                        }
 
-                listView.setAdapter(new ProgressArrayAdapter(MainActivity.this, R.layout.row, mJobOutput));
+                        listView.setAdapter(new ProgressArrayAdapter(MainActivity.this, R.layout.row, mJobOutput));
+                        //((Button) findViewById(R.id.newJobButton)).setEnabled(true);
+                    }
+                });
+
 
             }
 
@@ -242,7 +247,7 @@ public class MainActivity extends AppCompatActivity {
                 Toast.makeText(MainActivity.this, getResources().getString(error),
                         Toast.LENGTH_SHORT).show();
             }
-        };
+        });
     }
 
     private void setupDrawer() {
