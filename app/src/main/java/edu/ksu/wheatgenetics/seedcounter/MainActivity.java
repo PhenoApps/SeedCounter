@@ -65,6 +65,8 @@ public class MainActivity extends AppCompatActivity {
     private DrawerLayout mDrawerLayout;
     private NavigationView mNavView;
 
+    private File mTempDir;
+
     private ArrayList<Progress> mJobOutput;
 
     private FFmpeg mMpeg;
@@ -108,27 +110,6 @@ public class MainActivity extends AppCompatActivity {
         mJobOutput = new ArrayList<Progress>();
 
         initializeUI();
-
-        mMpeg = FFmpeg.getInstance(this);
-
-        try {
-            mMpeg.loadBinary(new LoadBinaryResponseHandler() {
-
-                @Override
-                public void onStart() {}
-
-                @Override
-                public void onFailure() {}
-
-                @Override
-                public void onSuccess() {}
-
-                @Override
-                public void onFinish() {}
-            });
-        } catch (FFmpegNotSupportedException e) {
-            // Handle if FFmpeg is not supported by device
-        }
 
         ActivityCompat.requestPermissions(MainActivity.this, SeedCounterConstants.permissions, SeedCounterConstants.PERM_REQUEST);
 
@@ -213,7 +194,7 @@ public class MainActivity extends AppCompatActivity {
 
         mJobOutput.add(p);
 
-        Job job = new Job(p, this, new Job.OutputCallback() {
+        Job job = new Job(p,this, mTempDir, new Job.OutputCallback() {
 
             @Override
             public void outputEvent(final Progress p) {
@@ -248,6 +229,8 @@ public class MainActivity extends AppCompatActivity {
                         Toast.LENGTH_SHORT).show();
             }
         });
+
+        job.execute();
     }
 
     private void setupDrawer() {
@@ -327,6 +310,46 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }
+
+        if (isExternalStorageWritable()) {
+
+            File experimentFolder = new File(getFilesDir().toString() + "_experiments");
+
+            if (experimentFolder.mkdir()) {
+                Log.d("TempFolder", "Created successfully.");
+            } else Log.d("TempFolder", "Not created successfully.");
+
+
+            File[] children = experimentFolder.listFiles();
+            for (File f : children) {
+                if (f.isDirectory()) {
+                    File[] innerChildren = f.listFiles();
+                    for (File child: innerChildren) {
+                        child.delete();
+                    }
+                    if(f.delete()) {
+                        Log.d("TempFolder", "Deleted successfully.");
+                    } else Log.d("TempFolder", "Not deleted successfully.");
+                }
+            }
+
+            if (experimentFolder.exists()) {
+
+                mTempDir = experimentFolder;
+
+            } else if (!experimentFolder.mkdirs()) {
+                Toast.makeText(this, R.string.error_temp_dir_creation, Toast.LENGTH_LONG);
+            }
+        }
+    }
+
+    private static boolean isExternalStorageWritable() {
+
+        String state = Environment.getExternalStorageState();
+        if (Environment.MEDIA_MOUNTED.equals(state)) {
+            return true;
+        }
+        return false;
     }
 
     //based on https://github.com/iPaulPro/aFileChooser/blob/master/aFileChooser/src/com/ipaulpro/afilechooser/utils/FileUtils.java

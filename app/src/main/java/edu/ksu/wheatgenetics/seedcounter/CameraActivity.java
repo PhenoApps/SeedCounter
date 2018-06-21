@@ -17,15 +17,7 @@ public class CameraActivity extends AppCompatActivity {
         setContentView(R.layout.activity_camera);
 
         getFragmentManager().beginTransaction()
-                .replace(R.id.container, Camera2BasicFragment.newInstance())
+                .replace(R.id.container, Camera2Video.newInstance())
                 .commit();
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent intent) {
-
-        if (resultCode == SeedCounterConstants.CAMERA_RESULT_SUCCESS) {
-
-        }
     }
 }

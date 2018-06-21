@@ -24,5 +24,5 @@ class Progress {
     public String getPath() { return this.mPath; }
 
     @Override
-    public String toString() { return this.mId + "\t" + this.mProgress; }
+    public String toString() { return this.getPath() + ": " + this.mProgress; }
 }

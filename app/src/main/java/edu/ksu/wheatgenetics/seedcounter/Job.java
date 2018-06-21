@@ -1,17 +1,12 @@
 package edu.ksu.wheatgenetics.seedcounter;
 
-import android.content.ContentUris;
+import android.annotation.SuppressLint;
 import android.content.Context;
-import android.database.Cursor;
+import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
-import android.net.Uri;
 import android.os.AsyncTask;
 import android.os.Environment;
-import android.provider.DocumentsContract;
-import android.provider.MediaStore;
 import android.util.Log;
-import android.widget.ListView;
-import android.widget.Toast;
 
 import com.github.hiteshsondhi88.libffmpeg.ExecuteBinaryResponseHandler;
 import com.github.hiteshsondhi88.libffmpeg.FFmpeg;
@@ -25,89 +20,11 @@ import java.io.File;
  * Created by chaneylc on 4/26/18.
  */
 
-class Job {
+class Job extends AsyncTask<Void, String, Void> {
 
-    interface OutputCallback {
-        void outputEvent(Progress p);
-        void errorEvent(int error);
-    }
-
-    private int mPrevFrameCount;
-
-    private SeedCounter mSeedCounter;
-
-    private Context ctx;
-
-    private Progress mProgress;
-
-    private int mFrameCount;
-
-    OutputCallback callback;
-
-    Job(Progress p, Context ctx, OutputCallback outputCallback) {
-
-        this.ctx = ctx;
-
-        mFrameCount = 0;
-
-        mPrevFrameCount = 0;
-
-        SeedCounter.SeedCounterParams params =
-                new SeedCounter.SeedCounterParams(200, 16000, 34,
-                        0.25, 4.0);
-
-        mSeedCounter = new SeedCounter(params);
-
-        mProgress = p;
-
-        callback = outputCallback;
-
-        startProcessing(mProgress.getPath());
-    }
-
-    //creates and empties a temporary directory
-    private void startProcessing(final String path) {
-
-        if (isExternalStorageWritable()) {
-
-            File vidFile = new File(path);
-            final File tempDir = new File(vidFile.getParent() + "temp" + System.nanoTime());
-
-            if (tempDir.mkdir()) {
-                Log.d("TempFolder", "Created successfully.");
-            } else Log.d("TempFolder", "Not created successfully.");
-
-
-            File[] children = tempDir.listFiles();
-            for (File f : children) {
-                if(f.delete()) {
-                    Log.d("TempFolder", "Deleted successfully.");
-                } else Log.d("TempFolder", "Not deleted successfully.");
-            }
-
-            if (tempDir.exists()) {
-
-                String nextFramePath = tempDir.getPath() + "/temp%d.jpg";
-
-                mPrevFrameCount = 0;
-
-                executeProcessing(path, nextFramePath, tempDir);
-
-
-            } else if (!tempDir.mkdirs()) {
-                callback.errorEvent(R.string.error_temp_dir_creation);
-            }
-        } else {
-            callback.errorEvent(R.string.error_storage);
-        }
-    }
-
-
-    private void executeProcessing(final String path, final String nextFramePath, final File dir) {
-
-        mProgress.setProgress("SLICING");
-
-        callback.outputEvent(mProgress);
+    //async background function for loading ffmpeg binary and splitting file into frames
+    @Override
+    protected Void doInBackground(Void... voids) {
 
         final FFmpeg mMpeg = FFmpeg.getInstance(ctx);
 
@@ -122,11 +39,15 @@ class Job {
 
                 @Override
                 public void onSuccess() {
+
                     try {
+
                         mMpeg.execute(
 
-                                //ffmpeg commands
-                                new String[]{"-i", path, nextFramePath},
+                                //ffmpeg commands, slices a video and interpolates to 60 fps
+                                //new String[] {"-y", "-i", mProgress.getPath(), "-filter_complex", "[0:v]setpts=1.5*PTS[v]", "-map", "[v]", "-b:v", "2097k", "-r", "60", mTempDir.getPath() + "/temp%d.jpg"},
+                                //new String[] {"-i", mProgress.getPath(), "-filter", "minterpolate='mi_mode=mci:mc_mode=aobmc:vsbmc=1:fps=120'", mTempDir.getPath() + "/temp%d.jpg"},
+                                new String[]{"-i", mProgress.getPath(), "-r", "30", mTempDir.getPath() + "/temp%d.jpg"},
 
                                 //class to control messages sent by ffmpeg lib
                                 new ExecuteBinaryResponseHandler() {
@@ -134,11 +55,7 @@ class Job {
                                     @Override
                                     public void onSuccess(String msg) {
 
-                                        mProgress.setProgress("COUNTING");
-
-                                        callback.outputEvent(mProgress);
-
-                                        nextFrame(dir, mFrameCount);
+                                        nextFrame(mTempDir, mFrameCount);
 
                                     }
 
@@ -146,11 +63,13 @@ class Job {
                                     public void onProgress(String msg) {
 
                                         //publishProgress(msg);
-
+                                        Log.d("Slice progress", msg);
                                         if (msg.contains("frame=")) {
                                             mFrameCount = Integer.valueOf(
                                                     msg.split("frame=\\s+")[1].split(" ")[0]
                                             );
+
+                                            onProgressUpdate(String.valueOf(mFrameCount));
                                         }
 
                                     }
@@ -167,46 +86,146 @@ class Job {
         } catch (FFmpegNotSupportedException e) {
             // Handle if FFmpeg is not supported by device
         }
+        return null;
     }
 
+
+    //updates the progress for loading/slicing a video
+    @Override
+    protected void onProgressUpdate(String... prog) {
+
+         mProgress.setProgress("Loading frame: " + prog[0]);
+
+         callback.outputEvent(mProgress);
+    }
+
+    interface OutputCallback {
+        void outputEvent(Progress p);
+        void errorEvent(int error);
+    }
+
+    private SeedCounter mSeedCounter;
+
+    private Context ctx;
+
+    private Progress mProgress;
+
+    private File mExperimentDir;
+
+    private File mTempDir;
+
+    private int mFrameCount;
+
+    OutputCallback callback;
+
+    Job(Progress p, Context ctx, File dir, OutputCallback outputCallback) {
+
+        this.ctx = ctx;
+
+        mExperimentDir = dir;
+
+        mFrameCount = 0;
+
+        SeedCounter.SeedCounterParams params =
+                new SeedCounter.SeedCounterParams(300, 1000000, 34,
+                        0.25, 4.0);
+
+        mSeedCounter = new SeedCounter(params, p.getPath());
+
+        mProgress = p;
+
+        callback = outputCallback;
+
+        if (isExternalStorageWritable()) {
+
+            File vidFile = new File(mProgress.getPath());
+
+            String tempFolderName = "temp" + System.nanoTime();
+            final File tempDir = new File(mExperimentDir, tempFolderName);
+
+            if (tempDir.mkdir()) {
+                Log.d("TempFolder", "Created successfully.");
+            } else Log.d("TempFolder", "Not created successfully.");
+
+
+            File[] children = tempDir.listFiles();
+            for (File f : children) {
+                if(f.delete()) {
+                    Log.d("TempFolder", "Deleted successfully.");
+                } else Log.d("TempFolder", "Not deleted successfully.");
+            }
+
+            if (tempDir.exists()) {
+
+                mTempDir = tempDir;
+
+            } else if (!tempDir.mkdirs()) {
+                callback.errorEvent(R.string.error_temp_dir_creation);
+            }
+        } else {
+            callback.errorEvent(R.string.error_storage);
+        }
+
+    }
+
+    @SuppressLint("StaticFieldLeak")
     private void nextFrame(final File dir, final int frameCount) {
 
         if (dir.isDirectory()) {
 
-            final File[] children = dir.listFiles();
-            final File[] nextFrames = new File[frameCount - mPrevFrameCount];
+            new AsyncTask<String, String, Void>() {
 
-            int j = 0;
-            for (int i = mPrevFrameCount; i < frameCount; i++) {
-                nextFrames[j++] = children[i];
-            }
-
-            mPrevFrameCount = frameCount;
-
-
-            Thread t = new Thread(new Runnable() {
                 @Override
-                public void run() {
-                    for (int i = 0; i < nextFrames.length; i++) {
+                protected Void doInBackground(String... strings) {
 
-                        mSeedCounter.process(
+                    final File[] children = dir.listFiles();
+
+                    //Bitmap[] frames = new Bitmap[children.length];
+
+                    mSeedCounter.process(children);
+
+                    /*for (int i = 0; i < children.length; i++) {
+
+                        frames[i] = BitmapFactory.decodeFile(
+                                children[i].getPath()
+                        );
+
+                        /*mSeedCounter.process(
                                 BitmapFactory.decodeFile(
-                                        nextFrames[i].getPath()));
+                                        f.getPath()));
+
+                        //onProgressUpdate(String.valueOf(mSeedCounter.getNumSeeds()));
+
 
                     }
-                    mProgress.setProgress(String.valueOf(
+
+                    mSeedCounter.process(frames);*/
+
+                    return null;
+                }
+
+                @Override
+                protected void onProgressUpdate(String... prog) {
+
+                    mProgress.setProgress("Current count: " + String.valueOf(
+                            mSeedCounter.getNumSeeds()
+                    ));
+
+                    callback.outputEvent(mProgress);
+
+                }
+
+                @Override
+                protected void onPostExecute(Void v) {
+
+                    mProgress.setProgress("Final count: " + String.valueOf(
                             mSeedCounter.getNumSeeds()
                     ));
 
                     callback.outputEvent(mProgress);
                 }
-            });
 
-            Log.d("THREAD", "START");
-            t.start();
-
-
-
+            }.execute();
         }
 
     }

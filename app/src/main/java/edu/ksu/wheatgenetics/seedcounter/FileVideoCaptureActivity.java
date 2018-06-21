@@ -130,7 +130,7 @@ public class FileVideoCaptureActivity extends AppCompatActivity {
         final double newSeedDistRatio = Double.valueOf(sharedPref.getString(SettingsActivity.PARAM_NEW_SEED_DIST_RATIO, "4.0"));
 
         final SeedCounter.SeedCounterParams params = new SeedCounter.SeedCounterParams(areaLow, areaHigh, defaultRate, sizeLowerBoundRatio, newSeedDistRatio);
-        mSeedCounter = new SeedCounter(params);
+        //mSeedCounter = new SeedCounter(params);
 
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
 
