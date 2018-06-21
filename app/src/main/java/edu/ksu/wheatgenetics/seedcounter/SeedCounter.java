@@ -132,7 +132,7 @@ public class SeedCounter {
                 if (mAvgFlowRate > 0)
                     py += mAvgFlowRate;
                 else
-                    py += 100; //this value could be estimated based on previous runs, or just use 1
+                    py += 200; //this value could be estimated based on previous runs, or just use 1
                 s.px = px;
                 s.py = py;
                 if (!s.done) {
@@ -142,9 +142,8 @@ public class SeedCounter {
                     //s.age is the number of frames since the seed was assigned, and s.updates is
                     //the number of times assigned
 
-
-                    //TODO CHECK
-                    if ((s.age >= s.maxAge) && (s.age > s.updates + 4) && (s.updates < s.maxAge)) {
+                    if ((s.age >= s.maxAge) && (s.age > s.updates + 32)
+                            && (s.updates < s.maxAge)) {
                         mNumSeeds--;
                         s.setDone();
                     }
@@ -237,7 +236,7 @@ public class SeedCounter {
                 }
                 if (newSeed && cy <= downLimit) {
 
-                    Seed s = new Seed(mSeeds.size(), cx, cy, 8, mFrameCount);
+                    Seed s = new Seed(mSeeds.size(), cx, cy, 64, mFrameCount);
                     s.px = cx;
                     s.py = cy;
                     //append new seed to list
@@ -263,7 +262,6 @@ public class SeedCounter {
                             s.updatePredictions(px, py);
                             s.setDone();
                             s.state = 3;
-                            //TODO SET STATE 3?
                         }
                     }
                 }
