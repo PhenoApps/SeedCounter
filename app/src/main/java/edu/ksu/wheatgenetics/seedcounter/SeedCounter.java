@@ -40,7 +40,7 @@ public class SeedCounter {
     private double mAvgArea = 0;
     private int mAvgAreaCount = 0;
     private double mTotalArea = 0;
-    private double NEW_THRESHOLD = 200;
+    private double NEW_THRESHOLD = 50;
     private Mat mFirstFrame;
     private ArrayList<Seed> mSeeds;
     private String mFile;
@@ -77,8 +77,6 @@ public class SeedCounter {
 
     void process(File[] frames) {
 
-
-
         for (File f: frames) {
 
             Mat frame = new Mat();
@@ -87,12 +85,12 @@ public class SeedCounter {
 
             int videoWidth = frame.width();
             int videoHeight = frame.height();
-            int downLimit = (int) (0.9 * videoHeight);
+            int downLimit = (int) (0.7 * videoHeight);
 
             //Log.d("SIZE", String.valueOf(videoWidth) + "X" + String.valueOf(videoHeight));
 
-
-            if (videoWidth < videoHeight) Core.rotate(frame, frame, 270);
+            //if (videoWidth < videoHeight)
+            //Core.rotate(frame, frame, 270);
 
             Mat gray = new Mat();
             //convert to grayscale
@@ -117,6 +115,9 @@ public class SeedCounter {
                     Imgproc.threshold(frame2, thresh1, mDenoise, 255.0, Imgproc.THRESH_BINARY);
 
             Mat opening = new Mat();
+
+            Imgproc.erode(thresh1, thresh1,  Mat.ones(5,5, CvType.CV_8U));
+
             Imgproc.morphologyEx(thresh1, opening, Imgproc.MORPH_OPEN, Mat.ones(5, 5, CvType.CV_8U));
 
             //find contours and draw contour of each seed
@@ -132,7 +133,7 @@ public class SeedCounter {
                 if (mAvgFlowRate > 0)
                     py += mAvgFlowRate;
                 else
-                    py += 200; //this value could be estimated based on previous runs, or just use 1
+                    py += 30; //this value could be estimated based on previous runs, or just use 1
                 s.px = px;
                 s.py = py;
                 if (!s.done) {
@@ -142,7 +143,7 @@ public class SeedCounter {
                     //s.age is the number of frames since the seed was assigned, and s.updates is
                     //the number of times assigned
 
-                    if ((s.age >= s.maxAge) && (s.age > s.updates + 32)
+                    if ((s.age >= s.maxAge) && (s.age > s.updates)
                             && (s.updates < s.maxAge)) {
                         mNumSeeds--;
                         s.setDone();
@@ -157,7 +158,6 @@ public class SeedCounter {
             //Imgcodecs.imwrite(new File(mFile).getParent() + "temp_contour" + System.nanoTime() + ".jpeg", frame);
             //Log.d("FILECHECK", new File(mFile).getParent() + "temp_contour" + System.nanoTime() + ".jpeg");
 
-            //TODO CHECK
             if (mAvgFlowRate > 0) NEW_THRESHOLD = 4.0 * mAvgFlowRate;
 
 
@@ -172,7 +172,7 @@ public class SeedCounter {
                 Log.d("AREA", String.valueOf(area));
 
                 //if the area is too small or too large, skip the contour
-                if (area < 300 || area > 1000000) {
+                if (area < 100 || area > 1000000) {
                     continue;
                 }
 
@@ -184,8 +184,6 @@ public class SeedCounter {
                 //treat as a new seed unless it follows an existing seed
                 boolean newSeed = true;
 
-
-                //TODO CHECK
                 //initialize the minimum distance as width + height, more than any Euclidean distance
                 double minDist = videoWidth + videoHeight;
 
@@ -201,7 +199,7 @@ public class SeedCounter {
 
                     //if contour is below or nearly below current seed and
                     //seed is not done and not marked (s.fc ==fc) then consider it
-                    if (cy > s.cy - 10 && s.state < 3 && s.fc < mFrameCount) {
+                    if (cy > s.cy && s.state < 3 && s.fc < mFrameCount) {
                         long dst = (long) Math.sqrt((s.px - cx) * (s.px - cx)
                                 + (s.py - cy) * (s.py - cy));
                         if (dst < minDist) {
@@ -236,7 +234,7 @@ public class SeedCounter {
                 }
                 if (newSeed && cy <= downLimit) {
 
-                    Seed s = new Seed(mSeeds.size(), cx, cy, 64, mFrameCount);
+                    Seed s = new Seed(mSeeds.size(), cx, cy, 8, mFrameCount);
                     s.px = cx;
                     s.py = cy;
                     //append new seed to list
@@ -252,7 +250,7 @@ public class SeedCounter {
                         double px, py;
                         if (s.cy <= downLimit && s.cy > 0 && s.cx > 0) {
                             px = s.cx;
-                            py = s.cy + 1;
+                            py = s.cy + 30;
                             s.updatePredictions(px, py);
                             s.fc = mFrameCount;
                             s.state = 2;
@@ -293,10 +291,10 @@ public class SeedCounter {
 
             }
 
-            Log.d("Frame", String.valueOf(mFrameCount));
+            //Log.d("Frame", String.valueOf(mFrameCount));
             mFrameCount = mFrameCount + 1;
 
-            Imgcodecs.imwrite(new File(mFile).getParent() + "temp_contour" + System.nanoTime() + ".jpeg", frame);
+            //Imgcodecs.imwrite(new File(mFile).getParent() + "temp_contour" + System.nanoTime() + ".jpeg", frame);
 
             //return frame;
         }
